@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rive/rive.dart';
+import 'dart:async';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,33 +18,144 @@ class _LoginScreenState extends State<LoginScreen> {
   SMIBool? isHandsUP; // Se tapa los ojos
   SMITrigger? trigSuccess; // Se emociona
   SMITrigger? trigFail; // Se pone triste
-  SMINumber? numLook; // Controla la mirada del oso (nueva variable)
+  SMINumber? numLook; // Controla la mirada del oso
 
   // Estado para ocultar/mostrar contraseña
   bool _obscurePassword = true;
 
-  // Controlador para el campo de email
+  // Controladores para los campos de texto
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  // Focus nodes para detectar qué campo está activo
+  final FocusNode _emailFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
+
+  // Timer para el debounce
+  Timer? _debounceTimer;
+
+  // Estado para mostrar carga durante el login
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _emailController.addListener(_updateBearLook);
+    _emailController.addListener(_onEmailChanged);
+    
+    // Agregar listeners a los focus nodes
+    _emailFocusNode.addListener(_handleEmailFocusChange);
+    _passwordFocusNode.addListener(_handlePasswordFocusChange);
   }
 
   @override
   void dispose() {
     _emailController.dispose();
+    _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
-  void _updateBearLook() {
-    if (numLook != null) {
-      // Calculamos un valor entre 0 y 1 basado en la longitud del email
-      // Puedes ajustar el divisor (15) según lo que consideres una longitud "normal"
-      double lookValue = (_emailController.text.length/1);
+  void _onEmailChanged() {
+    // Cancelar el timer anterior si existe
+    _debounceTimer?.cancel();
+    
+    // Asegurarse de que isCheckIn esté activo cuando se escribe en el email
+    if (_emailFocusNode.hasFocus && isCheckIn != null) {
+      isCheckIn!.change(true);
+    }
+    
+    // Actualizar la mirada del oso según la longitud del texto
+    if (numLook != null && _emailFocusNode.hasFocus) {
+      double lookValue = (_emailController.text.length / 1);
       numLook!.change(lookValue);
     }
+    
+    // Iniciar un nuevo timer para resetear después de 1 segundo de inactividad
+    _debounceTimer = Timer(const Duration(seconds: 1), () {
+      // Solo resetear si el email aún tiene el foco
+      if (_emailFocusNode.hasFocus) {
+        if (isCheckIn != null) {
+          isCheckIn!.change(false); // Deja de mirar el email (vuelve a base)
+        }
+      }
+    });
+  }
+
+  void _handleEmailFocusChange() {
+    if (_emailFocusNode.hasFocus) {
+      // Cuando el email field está enfocado
+      if (isHandsUP != null) {
+        isHandsUP!.change(false); // Baja las manos si estaban arriba
+      }
+      // Nota: No activamos isCheckIn aquí, se activará al escribir
+    } else {
+      // Cuando el email field pierde el foco
+      _debounceTimer?.cancel(); // Cancelar el timer si existe
+      _resetEmailAnimation();
+    }
+  }
+
+  void _handlePasswordFocusChange() {
+    if (_passwordFocusNode.hasFocus) {
+      // Cuando el password field está enfocado
+      // Cancelar el timer del email si existe
+      _debounceTimer?.cancel();
+      if (isCheckIn != null) {
+        isCheckIn!.change(false); // Deja de mirar el email
+      }
+      if (isHandsUP != null) {
+        isHandsUP!.change(true); // Se tapa los ojos
+      }
+    } else {
+      // Cuando el password field pierde el foco
+      if (isHandsUP != null) {
+        isHandsUP!.change(false); // Baja las manos
+      }
+    }
+  }
+
+  void _resetEmailAnimation() {
+    if (isCheckIn != null) {
+      isCheckIn!.change(false); // Deja de mirar el email
+    }
+    //if (numLook != null) {
+      //numLook!.change(0.0); // Resetea la mirada a cero
+    //}
+  }
+
+  // Función para simular el proceso de login
+  void _simulateLogin() async {
+    if (_isLoading) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+    
+    // Ocultar teclado
+    FocusScope.of(context).unfocus();
+    
+    // Simular proceso de autenticación
+    await Future.delayed(const Duration(seconds: 2));
+    
+    // Verificar credenciales (esto es solo un ejemplo)
+    final email = _emailController.text;
+    final password = _passwordController.text;
+    
+    final isValid = email.contains('@') && password.length >= 6;
+    
+    // Activar la animación correspondiente
+    if (isValid && trigSuccess != null) {
+      trigSuccess!.fire();
+      // Aquí podrías navegar a la siguiente pantalla después de un delay
+    } else if (!isValid && trigFail != null) {
+      trigFail!.fire();
+    }
+    
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   @override
@@ -77,22 +189,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     isHandsUP = controller!.findSMI("isHandsUp");
                     trigSuccess = controller!.findSMI("trigSuccess");
                     trigFail = controller!.findSMI("trigFail");
-                    numLook = controller!.findSMI("numLook"); // Nueva variable
+                    numLook = controller!.findSMI("numLook");
                   },
                 ),
               ),
               const SizedBox(height: 10),
               TextField(
-                controller: _emailController, // Usar el controlador
-                onChanged: (value) {
-                  if (isHandsUP != null) {
-                    // No subir las manos al escribir email
-                    isHandsUP!.change(false);
-                  }
-                  // Verifica que ese SMI no sea nulo
-                  if (isCheckIn == null) return;
-                  isCheckIn!.change(true);
-                },
+                controller: _emailController,
+                focusNode: _emailFocusNode,
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   hintText: "Email",
@@ -104,15 +208,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 10),
               TextField(
-                onChanged: (value) {
-                  if (isCheckIn != null) {
-                    // No mover los ojos al escribir la contraseña
-                    isCheckIn!.change(false);
-                  }
-                  // Verifica que ese SMI no sea nulo
-                  if (isHandsUP == null) return;
-                  isHandsUP!.change(true);
-                },
+                controller: _passwordController,
+                focusNode: _passwordFocusNode,
                 obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   hintText: "Password",
@@ -152,11 +249,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                onPressed: () {},
-                child: const Text(
-                  "Login",
-                  style: TextStyle(color: Colors.white),
-                ),
+                onPressed: _simulateLogin,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Login",
+                        style: TextStyle(color: Colors.white),
+                      ),
               ),
               const SizedBox(height: 10),
               SizedBox(
